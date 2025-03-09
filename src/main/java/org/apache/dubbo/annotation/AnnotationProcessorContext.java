@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.dubbo.annotation;
 
 import com.sun.source.util.Trees;
@@ -27,11 +26,15 @@ import com.sun.tools.javac.util.Names;
 import javax.annotation.processing.ProcessingEnvironment;
 import java.lang.reflect.Method;
 import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * The Context Object of Annotation Processor, which stores objects related to javac.
  */
 public class AnnotationProcessorContext {
+    private static final Logger LOGGER = Logger.getLogger(AnnotationProcessorContext.class.getName());
+    
     private JavacProcessingEnvironment javacProcessingEnvironment;
     private JavacTrees javacTrees;
     private TreeMaker treeMaker;
@@ -39,7 +42,9 @@ public class AnnotationProcessorContext {
     private Context javacContext;
     private Trees trees;
 
-    private AnnotationProcessorContext() { }
+    private AnnotationProcessorContext() {
+        // Private constructor to enforce usage through factory method
+    }
 
     private static <T> T jbUnwrap(Class<? extends T> iface, T wrapper) {
         T unwrapped = null;
@@ -47,7 +52,8 @@ public class AnnotationProcessorContext {
             final Class<?> apiWrappers = wrapper.getClass().getClassLoader().loadClass("org.jetbrains.jps.javac.APIWrappers");
             final Method unwrapMethod = apiWrappers.getDeclaredMethod("unwrap", Class.class, Object.class);
             unwrapped = iface.cast(unwrapMethod.invoke(null, iface, wrapper));
-        } catch (Throwable ignored) {
+        } catch (Throwable e) {
+            LOGGER.log(Level.WARNING, "Failed to unwrap ProcessingEnvironment: " + e.getMessage(), e);
         }
 
         return unwrapped != null ? unwrapped : wrapper;
@@ -55,27 +61,36 @@ public class AnnotationProcessorContext {
 
     public static AnnotationProcessorContext fromProcessingEnvironment(ProcessingEnvironment processingEnv) {
         AnnotationProcessorContext apContext = new AnnotationProcessorContext();
+        
+        if (processingEnv == null) {
+            throw new IllegalArgumentException("ProcessingEnvironment cannot be null");
+        }
 
         Object procEnvToUnwrap = processingEnv.getClass() == JavacProcessingEnvironment.class ?
             processingEnv : jbUnwrap(JavacProcessingEnvironment.class, processingEnv);
 
-        JavacProcessingEnvironment jcProcessingEnvironment = (JavacProcessingEnvironment) procEnvToUnwrap;
+        if (!(procEnvToUnwrap instanceof JavacProcessingEnvironment)) {
+            throw new IllegalStateException("Failed to obtain JavacProcessingEnvironment");
+        }
 
+        JavacProcessingEnvironment jcProcessingEnvironment = (JavacProcessingEnvironment) procEnvToUnwrap;
         Context context = jcProcessingEnvironment.getContext();
 
         apContext.javacProcessingEnvironment = jcProcessingEnvironment;
-
         apContext.javacContext = context;
         apContext.javacTrees = JavacTrees.instance(jcProcessingEnvironment);
         apContext.treeMaker = TreeMaker.instance(context);
         apContext.names = Names.instance(context);
-
         apContext.trees = Trees.instance(jcProcessingEnvironment);
 
+        // Ensure all required components are initialized
+        if (apContext.javacTrees == null || apContext.treeMaker == null || apContext.names == null || apContext.trees == null) {
+            throw new IllegalStateException("Failed to initialize AnnotationProcessorContext due to missing components.");
+        }
+
+        LOGGER.info("Successfully created AnnotationProcessorContext.");
         return apContext;
     }
-
-    // Auto-generated methods.
 
     public JavacTrees getJavacTrees() {
         return javacTrees;
@@ -105,35 +120,30 @@ public class AnnotationProcessorContext {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-
-        AnnotationProcessorContext context = (AnnotationProcessorContext) o;
-
-        if (!Objects.equals(javacTrees, context.javacTrees)) return false;
-        if (!Objects.equals(treeMaker, context.treeMaker)) return false;
-        if (!Objects.equals(names, context.names)) return false;
-        if (!Objects.equals(javacContext, context.javacContext))
-            return false;
-        return Objects.equals(trees, context.trees);
+        
+        AnnotationProcessorContext that = (AnnotationProcessorContext) o;
+        return Objects.equals(javacProcessingEnvironment, that.javacProcessingEnvironment) &&
+               Objects.equals(javacTrees, that.javacTrees) &&
+               Objects.equals(treeMaker, that.treeMaker) &&
+               Objects.equals(names, that.names) &&
+               Objects.equals(javacContext, that.javacContext) &&
+               Objects.equals(trees, that.trees);
     }
 
     @Override
     public int hashCode() {
-        int result = javacTrees != null ? javacTrees.hashCode() : 0;
-        result = 31 * result + (treeMaker != null ? treeMaker.hashCode() : 0);
-        result = 31 * result + (names != null ? names.hashCode() : 0);
-        result = 31 * result + (javacContext != null ? javacContext.hashCode() : 0);
-        result = 31 * result + (trees != null ? trees.hashCode() : 0);
-        return result;
+        return Objects.hash(javacProcessingEnvironment, javacTrees, treeMaker, names, javacContext, trees);
     }
 
     @Override
     public String toString() {
         return "AnnotationProcessorContext{" +
-            "javacTrees=" + javacTrees +
-            ", treeMaker=" + treeMaker +
-            ", names=" + names +
-            ", javacContext=" + javacContext +
-            ", trees=" + trees +
-            '}';
+                "javacProcessingEnvironment=" + javacProcessingEnvironment +
+                ", javacTrees=" + javacTrees +
+                ", treeMaker=" + treeMaker +
+                ", names=" + names +
+                ", javacContext=" + javacContext +
+                ", trees=" + trees +
+                '}';
     }
 }
